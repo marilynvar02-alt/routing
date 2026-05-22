@@ -58,7 +58,7 @@ if ($searchTerm !== '') {
              OR d.route_state COLLATE utf8mb4_general_ci LIKE ?
              OR d.remarks COLLATE utf8mb4_general_ci LIKE ?
            )
-         ORDER BY COALESCE(d.date_time_receiving, d.received_at, d.time_stamp_received) DESC, d.created_at DESC"
+         ORDER BY COALESCE(d.date_time_receiving, d.status, d.received_at, d.time_stamp_received) DESC, d.created_at DESC"
     );
     $allStmt->bind_param('ssssss', $like, $like, $like, $like, $like, $like);
     $allStmt->execute();
@@ -69,7 +69,7 @@ if ($searchTerm !== '') {
         "SELECT d.id, d.title, d.status, d.route_state, d.sender_name, d.receiver_name, d.created_at, COALESCE(d.date_time_receiving, d.received_at, d.time_stamp_received) AS received_time, d.date_time_receiving, d.received_at, d.time_stamp_received, d.remarks
          FROM documents d
          WHERE LOWER(TRIM(d.route_state)) = 'received'
-         ORDER BY COALESCE(d.date_time_receiving, d.received_at, d.time_stamp_received) DESC, d.created_at DESC"
+         ORDER BY COALESCE(d.date_time_receiving, d.status, d.received_at, d.time_stamp_received) DESC, d.created_at DESC"
     );
     $allStmt->execute();
     $allDocs = $allStmt->get_result();
@@ -81,6 +81,18 @@ $forwardUsers = [];
 if ($usersRes = $conn->query("SELECT username FROM users WHERE username <> '" . $conn->real_escape_string($me) . "' ORDER BY username ASC")) {
     while ($u = $usersRes->fetch_assoc()) { $forwardUsers[] = $u['username']; }
     $usersRes->close();
+}
+
+function status_badge_class($status) {
+    $s = strtolower(trim((string)$status));
+    if ($s === 'for consideration')          return 'status-consideration';
+    if ($s === 'for appropriate action')     return 'status-action';
+    if ($s === 'for comments')               return 'status-comments';
+    if ($s === 'for initial/signature')      return 'status-signature';
+    if ($s === 'for information/file')       return 'status-info';
+    if ($s === 'drafting of reply')          return 'status-drafting';
+    if ($s === 'specify' || $s === '')       return 'status-default';
+    return 'status-specify';
 }
 ?>
 <!DOCTYPE html>
@@ -129,6 +141,14 @@ if ($usersRes = $conn->query("SELECT username FROM users WHERE username <> '" . 
         .search-btn { display:inline-flex; align-items:center; gap:6px; padding:9px 14px; border-radius:8px; background:var(--primary-color); color:white; border:none; cursor:pointer; font-weight:600; font-size:.85rem; text-decoration:none; }
         .search-btn.clear { background:#f3f4f6; color:#374151; }
         .badge.route { background:#e0e7ff; color:#3730a3; transition: background .3s, color .3s; }
+        .badge.status-consideration { background:#e0f2fe; color:#075985; }
+        .badge.status-action        { background:#fee2e2; color:#991b1b; }
+        .badge.status-comments      { background:#fef3c7; color:#92400e; }
+        .badge.status-signature     { background:#ede9fe; color:#5b21b6; }
+        .badge.status-info          { background:#dbeafe; color:#1e40af; }
+        .badge.status-drafting      { background:#fce7f3; color:#9d174d; }
+        .badge.status-specify       { background:#dcfce7; color:#166534; }
+        .badge.status-default       { background:#f3f4f6; color:#374151; }
         .badge.route.flash { animation: routeFlash 1.8s ease-out; }
         @keyframes routeFlash {
             0%   { background:#fde68a; color:#92400e; box-shadow:0 0 0 4px rgba(253,230,138,.6); }
@@ -176,7 +196,7 @@ if ($usersRes = $conn->query("SELECT username FROM users WHERE username <> '" . 
     </aside>
     <main class="main-content">
         <div class="header">
-            <h1>Welcome back <?php echo htmlspecialchars($me); ?> 👤</h1>
+            <h1>Welcome back! <?php echo htmlspecialchars($me); ?> 👤</h1>
             <form class="search-form" method="get" action="dashboard.php">
                 <input type="text" name="q" placeholder="Search title, status, sender, receiver…" value="<?php echo htmlspecialchars($searchTerm); ?>">
                 <button type="submit" class="search-btn"><i class="fas fa-search"></i> Search</button>
@@ -213,7 +233,7 @@ if ($usersRes = $conn->query("SELECT username FROM users WHERE username <> '" . 
                         <?php while ($d = $allDocs->fetch_assoc()): ?>
                             <tr data-id="<?php echo intval($d['id'] ?? 0); ?>">
                                 <td><?php echo htmlspecialchars($d['title'] ?? 'No transaction yet'); ?></td>
-                                <td><span class="badge"><?php echo htmlspecialchars($d['status'] ?? '—'); ?></span></td>
+                                <td><span class="badge <?php echo status_badge_class($d['status'] ?? ''); ?>"><?php echo htmlspecialchars($d['status'] ?? '—'); ?></span></td>
                                 <td><span class="badge route"><?php echo htmlspecialchars($d['route_state'] ?? '—'); ?></span></td>
                                 <td><?php echo htmlspecialchars($d['sender_name'] ?? '—'); ?></td>
                                 <td><?php echo htmlspecialchars($d['receiver_name'] ?? '—'); ?></td>
@@ -249,6 +269,18 @@ if ($usersRes = $conn->query("SELECT username FROM users WHERE username <> '" . 
                     .replace(/"/g,'&quot;').replace(/'/g,'&#039;');
             }
 
+            function statusClass(s) {
+                const v = (s || '').toString().trim().toLowerCase();
+                if (v === 'for consideration')      return 'status-consideration';
+                if (v === 'for appropriate action') return 'status-action';
+                if (v === 'for comments')           return 'status-comments';
+                if (v === 'for initial/signature')  return 'status-signature';
+                if (v === 'for information/file')   return 'status-info';
+                if (v === 'drafting of reply')      return 'status-drafting';
+                if (v === 'specify' || v === '')    return 'status-default';
+                return 'status-specify';
+            }
+
             function renderTable(docs) {
                 if (!docs.length) {
                     bodyWrap.innerHTML = '<div class="empty-state"><i class="fas fa-folder-open"></i><p>' +
@@ -261,7 +293,7 @@ if ($usersRes = $conn->query("SELECT username FROM users WHERE username <> '" . 
                 docs.forEach(d => {
                     html += '<tr data-id="' + esc(d.id || 0) + '">' +
                         '<td>' + esc(d.title || 'No transaction yet') + '</td>' +
-                        '<td><span class="badge">' + esc(d.status || '—') + '</span></td>' +
+                        '<td><span class="badge ' + statusClass(d.status) + '">' + esc(d.status || '—') + '</span></td>' +
                         '<td><span class="badge route">' + esc(d.route_state || '—') + '</span></td>' +
                         '<td>' + esc(d.sender_name || '—') + '</td>' +
                         '<td>' + esc(d.receiver_name || '—') + '</td>' +
@@ -337,20 +369,21 @@ if ($usersRes = $conn->query("SELECT username FROM users WHERE username <> '" . 
             <?php if ($receivedDocs && $receivedDocs->num_rows > 0): ?>
                 <div style="overflow-x:auto;">
                     <table>
-                        <thead><tr><th>Title</th><th>Status</th><th>Sender</th><th>Sent At</th><th>Received At</th><th>Remarks</th><th>Actions</th></tr></thead>
+                        <thead><tr><th>Title</th><th>Status</th><th>Route State</th><th>Sender</th><th>Sent At</th><th>Received At</th><th>Remarks</th><th>Actions</th></tr></thead>
                         <tbody>
                         <?php while ($r = $receivedDocs->fetch_assoc()): ?>
                             <tr>
                                 <td><?php echo htmlspecialchars($r['title']); ?></td>
-                                <td><span class="badge"><?php echo htmlspecialchars($r['status']); ?></span></td>
+                                <td><span class="badge <?php echo status_badge_class($r['status'] ?? ''); ?>"><?php echo htmlspecialchars($r['status'] ?? '—'); ?></span></td>
+                                <td><span class="badge route"><?php echo htmlspecialchars($r['route_state'] ?? '—'); ?></span></td>
                                 <td><?php echo htmlspecialchars($r['sender_name']); ?></td>
                                 <td><?php echo htmlspecialchars($r['created_at']); ?></td>
                                 <td><?php $receivedTime = $r['date_time_receiving'] ?: ($r['received_at'] ?: ($r['time_stamp_received'] ?? null)); echo !empty($receivedTime) ? htmlspecialchars(date('Y-m-d H:i:s', strtotime($receivedTime))) : '—'; ?></td>
                                 <td><?php echo htmlspecialchars($r['remarks']); ?></td>
                                 <td>
-                                    <a class="action-btn" href="history.php?id=<?php echo intval($r['id']); ?>&return_to=dashboard.php"><i class="fas fa-clock-rotate-left"></i> </a>
-                                    <button type="button" class="action-btn edit" onclick="openEditRemarks(<?php echo intval($r['id']); ?>, <?php echo htmlspecialchars(json_encode($r['remarks'] ?? ''), ENT_QUOTES); ?>)"><i class="fas fa-edit"></i> </button>
-                                    <button type="button" class="action-btn forward" onclick="openForward(<?php echo intval($r['id']); ?>, <?php echo htmlspecialchars(json_encode($r['title'] ?? ''), ENT_QUOTES); ?>)"><i class="fas fa-share"></i> </button>
+                                    <a class="action-btn" title="History" aria-label="History" href="history.php?id=<?php echo intval($r['id']); ?>&return_to=dashboard.php"><i class="fas fa-clock-rotate-left"></i> </a>
+                                    <button type="button" class="action-btn edit" title="Edit Remarks" aria-label="Edit Remarks" onclick="openEditRemarks(<?php echo intval($r['id']); ?>, <?php echo htmlspecialchars(json_encode($r['remarks'] ?? ''), ENT_QUOTES); ?>)"><i class="fas fa-edit"></i> </button>
+                                    <button type="button" class="action-btn forward" title="Forward" aria-label="Forward" onclick="openForward(<?php echo intval($r['id']); ?>, <?php echo htmlspecialchars(json_encode($r['title'] ?? ''), ENT_QUOTES); ?>)"><i class="fas fa-share"></i> </button>
                                 </td>
                             </tr>
                         <?php endwhile; ?>
